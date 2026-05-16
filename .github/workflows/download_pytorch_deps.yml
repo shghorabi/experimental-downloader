@@ -1,4 +1,4 @@
-name: Download All PyTorch Wheels
+name: Download All PyTorch Wheels (Split)
 
 on:
   workflow_dispatch:
@@ -33,7 +33,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.12'   # same as your ComfyUI's Python version
+          python-version: '3.12'
 
       - name: Download all required wheels
         run: |
@@ -45,15 +45,56 @@ jobs:
             torch==2.6.0+cu124 \
             torchvision==0.21.0+cu124 \
             torchaudio==2.6.0+cu124
-          # Now all_wheels/ contains every .whl needed
 
-      - name: Package into a single zip
+      - name: Create split zip archive (45 MB parts)
         run: |
-          zip -r pytorch_all_deps.zip all_wheels/
+          # The archive name will be pytorch_all_deps.zip
+          # Split parts will be named pytorch_all_deps.zip, .z01, .z02, …
+          cd all_wheels
+          zip -0 -s 45m ../wget/pytorch_all_deps.zip *
+          cd ..
           rm -rf all_wheels
 
-      - name: Commit and push
+      - name: Generate README with Download Links
         run: |
-          git add pytorch_all_deps.zip
-          git commit -m "[bot] Add complete PyTorch dependency wheels" || echo "Nothing to commit"
-          git push
+          rm -f README.md
+          echo "# 📥 PyTorch Wheels (Split Archive)" > README.md
+          echo "Generated on: $(date)" >> README.md
+          echo "" >> README.md
+          echo "Download all parts and extract with 7-Zip/winRAR." >> README.md
+          echo "" >> README.md
+          for file in wget/*; do
+            if [ -f "$file" ]; then
+              filename=$(basename "$file")
+              encoded_filename=$(python3 -c "import urllib.parse, sys; print(urllib.parse.quote(sys.argv[1]))" "$filename")
+              url="https://github.com/${{ github.repository }}/raw/${{ github.ref_name }}/wget/$encoded_filename"
+              echo "- [Download $filename]($url)" >> README.md
+            fi
+          done
+
+      - name: Commit in batches
+        env:
+          BATCH_SIZE: 5
+        run: |
+          # Commit README first
+          if [ -f README.md ]; then
+            git add README.md
+            git commit -m "[bot] Add README with links" || echo "No changes to README"
+            git push
+          fi
+
+          cd wget
+          FILES=($(ls -1 | sort))
+          TOTAL=${#FILES[@]}
+          if [ $TOTAL -eq 0 ]; then
+            echo "No files to commit."
+            exit 0
+          fi
+          echo "Found $TOTAL part files. Committing in batches of $BATCH_SIZE..."
+          for ((i=0; i<$TOTAL; i+=$BATCH_SIZE)); do
+            BATCH=("${FILES[@]:i:$BATCH_SIZE}")
+            echo "Committing batch $((i/BATCH_SIZE + 1)): ${BATCH[*]}"
+            git add "${BATCH[@]}"
+            git commit -m "[bot] Add parts $((i+1)) to $((i+${#BATCH[@]})) of pytorch_all_deps"
+            git push
+          done
