@@ -1,4 +1,4 @@
-name: Download All PyTorch Wheels (Split)
+name: Download PyTorch Wheels (Windows)
 
 on:
   workflow_dispatch:
@@ -35,12 +35,15 @@ jobs:
         with:
           python-version: '3.12'
 
-      - name: Download all required wheels
+      - name: Download Windows wheels
         run: |
           mkdir all_wheels
           pip download \
             --dest all_wheels \
             --only-binary :all: \
+            --platform win_amd64 \
+            --python-version 312 \
+            --implementation cp \
             --extra-index-url https://download.pytorch.org/whl/cu124 \
             torch==2.6.0+cu124 \
             torchvision==0.21.0+cu124 \
@@ -48,17 +51,16 @@ jobs:
 
       - name: Create split zip archive (45 MB parts)
         run: |
-          # The archive name will be pytorch_all_deps.zip
-          # Split parts will be named pytorch_all_deps.zip, .z01, .z02, …
+          mkdir -p wget                     # <-- FIX: create the output folder first
           cd all_wheels
           zip -0 -s 45m ../wget/pytorch_all_deps.zip *
           cd ..
           rm -rf all_wheels
 
-      - name: Generate README with Download Links
+      - name: Generate README with download links
         run: |
           rm -f README.md
-          echo "# 📥 PyTorch Wheels (Split Archive)" > README.md
+          echo "# 📥 PyTorch Windows Wheels (Split Archive)" > README.md
           echo "Generated on: $(date)" >> README.md
           echo "" >> README.md
           echo "Download all parts and extract with 7-Zip/winRAR." >> README.md
