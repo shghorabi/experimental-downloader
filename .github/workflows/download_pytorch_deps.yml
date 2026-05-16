@@ -1,0 +1,69 @@
+name: Download PyTorch Dependencies
+
+on:
+  workflow_dispatch:
+
+jobs:
+  download-and-commit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: true
+          fetch-depth: 0
+
+      - name: Set up branch
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          BRANCH="pytorch-deps"
+          if git ls-remote --exit-code --heads origin $BRANCH; then
+            git checkout $BRANCH
+            git pull origin $BRANCH
+          else
+            git checkout --orphan $BRANCH
+            git rm -rf . || true
+            git commit --allow-empty -m "[bot] Init $BRANCH"
+            git push --set-upstream origin $BRANCH
+          fi
+
+      - name: Download all dependency wheels
+        run: |
+          mkdir wheels
+          cd wheels
+
+          # base URL for CUDA 12.4 wheels
+          BASE="https://download.pytorch.org/whl/cu124"
+
+          # list of all needed wheels (names only, URLs constructed)
+          FILES=(
+            "filelock/filelock-3.18.0-py3-none-any.whl"
+            "typing_extensions/typing_extensions-4.12.2-py3-none-any.whl"
+            "fsspec/fsspec-2025.3.2-py3-none-any.whl"
+            "jinja2/jinja2-3.1.6-py3-none-any.whl"
+            "markupsafe/markupsafe-3.0.2-cp312-cp312-win_amd64.whl"
+            "networkx/networkx-3.4.2-py3-none-any.whl"
+            "sympy/sympy-1.13.1-py3-none-any.whl"
+            "mpmath/mpmath-1.3.0-py3-none-any.whl"
+            "numpy/numpy-2.2.6-cp312-cp312-win_amd64.whl"
+            "pillow/pillow-11.1.0-cp312-cp312-win_amd64.whl"
+          )
+
+          for f in "${FILES[@]}"; do
+            echo "Downloading $f..."
+            wget -q --show-progress "$BASE/$f"
+          done
+
+          # zip everything into one archive
+          cd ..
+          zip -r pytorch_deps.zip wheels/
+          rm -rf wheels
+
+      - name: Commit and push
+        run: |
+          git add pytorch_deps.zip
+          git commit -m "[bot] Add PyTorch dependency wheels pack" || echo "Nothing to commit"
+          git push
