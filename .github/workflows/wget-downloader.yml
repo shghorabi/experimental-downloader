@@ -148,8 +148,33 @@ jobs:
             fi
           done
           
-      - name: Commit
+      - name: Commit (batched)
+        env:
+          BATCH_SIZE: 5   # Number of part files per commit
         run: |
-          git add README.md wget
-          git commit -m "[bot] Add wget download ${{ env.SAFE_NAME }}"
-          git push
+          # First, commit the README separately (tiny)
+          if [ -f README.md ]; then
+            git add README.md
+            git commit -m "[bot] Add README with links" || echo "No changes to README"
+            git push
+          fi
+
+          # Go into wget folder and get all part files
+          cd wget
+          FILES=($(ls -1 | sort))
+          TOTAL=${#FILES[@]}
+          
+          if [ $TOTAL -eq 0 ]; then
+            echo "No files to commit."
+            exit 0
+          fi
+
+          echo "Found $TOTAL part files. Committing in batches of $BATCH_SIZE..."
+
+          for ((i=0; i<$TOTAL; i+=$BATCH_SIZE)); do
+            BATCH=("${FILES[@]:i:$BATCH_SIZE}")
+            echo "Committing batch $((i/BATCH_SIZE + 1)): ${BATCH[*]}"
+            git add "${BATCH[@]}"
+            git commit -m "[bot] Add download parts $((i+1)) to $((i+${#BATCH[@]})) for ${{ env.SAFE_NAME }}"
+            git push
+          done
